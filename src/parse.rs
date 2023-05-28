@@ -54,7 +54,7 @@ fn parse_statement(statement: Stmt) -> ParseResult<Node> {
         StmtKind::Delete { targets: _ } => todo!("Delete"),
         StmtKind::Assign { targets, value, .. } => parse_assignment(first(targets)?, *value),
         StmtKind::AugAssign { target, op, value } => Ok(Node::OpAssign {
-            target: Identifier::from_ast(*target)?,
+            target: parse_identifier(*target)?,
             op: convert_op(op),
             object: parse_expression(*value)?,
         }),
@@ -141,7 +141,7 @@ fn parse_statement(statement: Stmt) -> ParseResult<Node> {
 /// `lhs = rhs` -> `lhs, rhs`
 fn parse_assignment(lhs: AstExpr, rhs: AstExpr) -> ParseResult<Node> {
     Ok(Node::Assign {
-        target: Identifier::from_ast(lhs)?,
+        target: parse_identifier(lhs)?,
         object: parse_expression(rhs)?,
     })
 }
@@ -207,7 +207,7 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ExprLoc> {
             },
         )),
         ExprKind::Call { func, args, keywords } => {
-            let func = Function::Ident(Identifier::from_ast(*func)?);
+            let func = Function::Ident(parse_identifier(*func)?);
             let args = args.into_iter().map(parse_expression).collect::<ParseResult<_>>()?;
             let kwargs = keywords
                 .into_iter()
@@ -258,6 +258,13 @@ fn first<T: std::fmt::Debug>(v: Vec<T>) -> ParseResult<T> {
         Err(format!("Expected 1 element, got {} (raw: {v:?})", v.len()).into())
     } else {
         v.into_iter().next().ok_or_else(|| "Expected 1 element, got 0".into())
+    }
+}
+
+fn parse_identifier(ast: AstExpr) -> ParseResult<Identifier> {
+    match ast.node {
+        ExprKind::Name { id, .. } => Ok(Identifier::from_name(id)),
+        _ => Err(format!("Expected name, got {:?}", ast.node).into()),
     }
 }
 

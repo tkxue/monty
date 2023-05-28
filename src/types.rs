@@ -1,8 +1,7 @@
 use crate::object::Object;
-use crate::parse::ParseResult;
 use crate::prepare::PrepareResult;
 
-use rustpython_parser::ast::{Expr as AstExpr, ExprKind, TextRange};
+use rustpython_parser::ast::TextRange;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Operator {
@@ -76,13 +75,6 @@ pub(crate) struct Identifier {
 }
 
 impl Identifier {
-    pub fn from_ast(ast: AstExpr) -> ParseResult<Self> {
-        match ast.node {
-            ExprKind::Name { id, .. } => Ok(Self::from_name(id)),
-            _ => Err(format!("Expected name, got {:?}", ast.node).into()),
-        }
-    }
-
     pub fn from_name(name: String) -> Self {
         Self { name, id: 0 }
     }
