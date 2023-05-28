@@ -1,7 +1,7 @@
 mod evaluate;
+mod object;
 mod parse;
 mod prepare;
-mod object;
 mod run;
 mod types;
 
@@ -10,18 +10,15 @@ use std::fs;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use crate::parse::{parse, ParseResult};
-use crate::prepare::{prepare, RunNode};
-use crate::run::{Frame, RunResult};
 use crate::object::Object;
+use crate::parse::{parse, ParseResult};
+use crate::prepare::prepare;
+use crate::run::{Frame, RunResult};
+use crate::types::Node;
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
-    let file_path = if args.len() > 1 {
-        &args[1]
-    } else {
-        "monty.py"
-    };
+    let file_path = if args.len() > 1 { &args[1] } else { "monty.py" };
     let code = match read_file(file_path) {
         Ok(code) => code,
         Err(err) => {
@@ -42,7 +39,7 @@ fn main() -> ExitCode {
             let toc = Instant::now();
             eprintln!("Elapsed time: {:?}", toc - tic);
             ExitCode::SUCCESS
-        },
+        }
         Err(err) => {
             eprintln!("Error running code: {err}");
             ExitCode::FAILURE
@@ -64,13 +61,13 @@ fn read_file(file_path: &str) -> Result<String, String> {
     }
     match fs::read_to_string(file_path) {
         Ok(contents) => Ok(contents),
-        Err(err) => Err(format!("Error reading file: {err}"))
+        Err(err) => Err(format!("Error reading file: {err}")),
     }
 }
 
 struct Executor {
     initial_namespace: Vec<Object>,
-    nodes: Vec<RunNode>,
+    nodes: Vec<Node>,
 }
 
 impl Executor {

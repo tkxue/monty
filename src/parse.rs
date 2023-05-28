@@ -6,15 +6,12 @@ use rustpython_parser::ast::{
 };
 use rustpython_parser::parse_program;
 
-use crate::types::{Expr, Node, Operator, CmpOperator};
 use crate::object::Object;
+use crate::types::{CmpOperator, Expr, ExprLoc, Function, Identifier, Kwarg, Node, Operator, Position};
 
 pub type ParseResult<T> = Result<T, Cow<'static, str>>;
 
-type ParseNode = Node<String, String>;
-type ParseExpr = Expr<String, String>;
-
-pub(crate) fn parse(code: &str, filename: &str) -> ParseResult<Vec<ParseNode>> {
+pub(crate) fn parse(code: &str, filename: &str) -> ParseResult<Vec<Node>> {
     match parse_program(code, filename) {
         Ok(ast) => {
             // dbg!(&ast);
@@ -24,11 +21,11 @@ pub(crate) fn parse(code: &str, filename: &str) -> ParseResult<Vec<ParseNode>> {
     }
 }
 
-fn parse_statements(statements: Vec<Stmt>) -> ParseResult<Vec<ParseNode>> {
+fn parse_statements(statements: Vec<Stmt>) -> ParseResult<Vec<Node>> {
     statements.into_iter().map(parse_statement).collect()
 }
 
-fn parse_statement(statement: Stmt) -> ParseResult<ParseNode> {
+fn parse_statement(statement: Stmt) -> ParseResult<Node> {
     match statement.node {
         StmtKind::FunctionDef {
             name: _,
@@ -56,13 +53,11 @@ fn parse_statement(statement: Stmt) -> ParseResult<ParseNode> {
         StmtKind::Return { value: _ } => todo!("Return"),
         StmtKind::Delete { targets: _ } => todo!("Delete"),
         StmtKind::Assign { targets, value, .. } => parse_assignment(first(targets)?, *value),
-        StmtKind::AugAssign { target, op, value } => {
-            Ok(Node::OpAssign {
-                target: get_name(*target)?,
-                op: convert_op(op),
-                object: Box::new(parse_expression(*value)?),
-            })
-        }
+        StmtKind::AugAssign { target, op, value } => Ok(Node::OpAssign {
+            target: Identifier::from_ast(*target)?,
+            op: convert_op(op),
+            object: Box::new(parse_expression(*value)?),
+        }),
         StmtKind::AnnAssign { target, value, .. } => match value {
             Some(value) => parse_assignment(*target, *value),
             None => Ok(Node::Pass),
@@ -144,14 +139,15 @@ fn parse_statement(statement: Stmt) -> ParseResult<ParseNode> {
 }
 
 /// `lhs = rhs` -> `lhs, rhs`
-fn parse_assignment(lhs: AstExpr, rhs: AstExpr) -> ParseResult<ParseNode> {
-    let target = get_name(lhs)?;
+fn parse_assignment(lhs: AstExpr, rhs: AstExpr) -> ParseResult<Node> {
+    let target = Identifier::from_ast(lhs)?;
     let value = Box::new(parse_expression(rhs)?);
     Ok(Node::Assign { target, object: value })
 }
 
-fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
-    match expression.node {
+fn parse_expression(expression: AstExpr) -> ParseResult<ExprLoc> {
+    let AstExpr { node, range, custom: _ } = expression;
+    match node {
         ExprKind::BoolOp { op, values } => {
             if values.len() != 2 {
                 return Err("BoolOp must have 2 values".into());
@@ -159,20 +155,26 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
             let mut values = values.into_iter();
             let left = Box::new(parse_expression(values.next().unwrap())?);
             let right = Box::new(parse_expression(values.next().unwrap())?);
-            Ok(Expr::Op {
-                left,
-                op: convert_bool_op(op),
-                right,
+            Ok(ExprLoc {
+                position: Position::from_range(&range),
+                expr: Expr::Op {
+                    left,
+                    op: convert_bool_op(op),
+                    right,
+                },
             })
         }
         ExprKind::NamedExpr { target: _, value: _ } => todo!("NamedExpr"),
         ExprKind::BinOp { left, op, right } => {
             let left = Box::new(parse_expression(*left)?);
             let right = Box::new(parse_expression(*right)?);
-            Ok(Expr::Op {
-                left,
-                op: convert_op(op),
-                right,
+            Ok(ExprLoc {
+                position: Position::from_range(&range),
+                expr: Expr::Op {
+                    left,
+                    op: convert_op(op),
+                    right,
+                },
             })
         }
         ExprKind::UnaryOp { op: _, operand: _ } => todo!("UnaryOp"),
@@ -195,19 +197,22 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
         ExprKind::Await { value: _ } => todo!("Await"),
         ExprKind::Yield { value: _ } => todo!("Yield"),
         ExprKind::YieldFrom { value: _ } => todo!("YieldFrom"),
-        ExprKind::Compare { left, ops, comparators } => Ok(Expr::CmpOp {
-            left: Box::new(parse_expression(*left)?),
-            op: convert_compare_op(first(ops)?),
-            right: Box::new(parse_expression(first(comparators)?)?),
-        }),
+        ExprKind::Compare { left, ops, comparators } => Ok(ExprLoc::from_expr(
+            &range,
+            Expr::CmpOp {
+                left: Box::new(parse_expression(*left)?),
+                op: convert_compare_op(first(ops)?),
+                right: Box::new(parse_expression(first(comparators)?)?),
+            },
+        )),
         ExprKind::Call { func, args, keywords } => {
-            let func = get_name(*func)?;
+            let func = Function::Ident(Identifier::from_ast(*func)?);
             let args = args.into_iter().map(parse_expression).collect::<ParseResult<_>>()?;
             let kwargs = keywords
                 .into_iter()
                 .map(parse_kwargs)
                 .collect::<ParseResult<Vec<_>>>()?;
-            Ok(Expr::Call { func, args, kwargs })
+            Ok(ExprLoc::from_expr(&range, Expr::Call { func, args, kwargs }))
         }
         ExprKind::FormattedValue {
             value: _,
@@ -215,7 +220,7 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
             format_spec: _,
         } => todo!("FormattedValue"),
         ExprKind::JoinedStr { values: _ } => todo!("JoinedStr"),
-        ExprKind::Constant { value, .. } => Ok(Expr::Constant(convert_const(value)?)),
+        ExprKind::Constant { value, .. } => Ok(ExprLoc::from_expr(&range, Expr::Constant(convert_const(value)?))),
         ExprKind::Attribute {
             value: _,
             attr: _,
@@ -227,7 +232,7 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
             ctx: _,
         } => todo!("Subscript"),
         ExprKind::Starred { value: _, ctx: _ } => todo!("Starred"),
-        ExprKind::Name { id, .. } => Ok(Expr::Name(id)),
+        ExprKind::Name { id, .. } => Ok(ExprLoc::from_expr(&range, Expr::Name(Identifier::from_name(id)))),
         ExprKind::List { elts: _, ctx: _ } => todo!("List"),
         ExprKind::Tuple { elts: _, ctx: _ } => todo!("Tuple"),
         ExprKind::Slice {
@@ -238,20 +243,13 @@ fn parse_expression(expression: AstExpr) -> ParseResult<ParseExpr> {
     }
 }
 
-fn parse_kwargs(kwarg: Keyword) -> ParseResult<(String, ParseExpr)> {
+fn parse_kwargs(kwarg: Keyword) -> ParseResult<Kwarg> {
     let key = match kwarg.node.arg {
-        Some(key) => key,
+        Some(key) => Identifier::from_name(key),
         None => return Err("kwargs with no key".into()),
     };
     let value = parse_expression(kwarg.node.value)?;
-    Ok((key, value))
-}
-
-fn get_name(lhs: AstExpr) -> ParseResult<String> {
-    match lhs.node {
-        ExprKind::Name { id, .. } => Ok(id),
-        _ => Err(format!("Expected name, got {:?}", lhs.node).into()),
-    }
+    Ok(Kwarg { key, value })
 }
 
 fn first<T: std::fmt::Debug>(v: Vec<T>) -> ParseResult<T> {

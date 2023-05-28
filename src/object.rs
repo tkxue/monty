@@ -1,6 +1,6 @@
+use crate::run::RunResult;
 use std::cmp::Ordering;
 use std::fmt;
-use crate::run::RunResult;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Object {
@@ -83,9 +83,7 @@ impl Object {
     pub fn add(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (Self::Int(v1), Self::Int(v2)) => Some(Self::Int(v1 + v2)),
-            (Self::Str(v1), Self::Str(v2)) => {
-                Some(Self::Str(format!("{v1}{v2}")))
-            }
+            (Self::Str(v1), Self::Str(v2)) => Some(Self::Str(format!("{v1}{v2}"))),
             (Self::List(v1), Self::List(v2)) => {
                 let mut v = v1.clone();
                 v.extend(v2.clone());
@@ -99,7 +97,7 @@ impl Object {
         match (self, other) {
             (Self::Int(v1), Self::Int(v2)) => {
                 *v1 += v2;
-            },
+            }
             (Self::Str(v1), Self::Str(v2)) => {
                 v1.push_str(&v2);
             }

@@ -1,9 +1,8 @@
-use std::borrow::Cow;
 use crate::evaluate::Evaluator;
+use std::borrow::Cow;
 
-use crate::prepare::{RunExpr, RunNode};
-use crate::types::{Expr, Node, Operator};
 use crate::object::Object;
+use crate::types::{Expr, ExprLoc, Identifier, Node, Operator};
 
 pub type RunResult<T> = Result<T, Cow<'static, str>>;
 
@@ -14,30 +13,28 @@ pub(crate) struct Frame {
 
 impl Frame {
     pub fn new(namespace: Vec<Object>) -> Self {
-        Self {
-            namespace,
-        }
+        Self { namespace }
     }
 
-    pub fn execute(&mut self, nodes: &[RunNode]) -> RunResult<()> {
+    pub fn execute(&mut self, nodes: &[Node]) -> RunResult<()> {
         for node in nodes {
             self.execute_node(node)?;
         }
         Ok(())
     }
 
-    fn execute_node(&mut self, node: &RunNode) -> RunResult<()> {
+    fn execute_node(&mut self, node: &Node) -> RunResult<()> {
         match node {
             Node::Pass => return Err("Unexpected `pass` in execution".into()),
             Node::Expr(expr) => {
                 self.execute_expr(expr)?;
-            },
+            }
             Node::Assign { target, object } => {
-                self.assign(*target, object)?;
-            },
+                self.assign(target, object)?;
+            }
             Node::OpAssign { target, op, object } => {
-                self.op_assign(*target, op, object)?;
-            },
+                self.op_assign(target, op, object)?;
+            }
             Node::For {
                 target,
                 iter,
@@ -49,26 +46,26 @@ impl Frame {
         Ok(())
     }
 
-    fn execute_expr<'a>(&'a self, expr: &'a RunExpr) -> RunResult<Cow<Object>> {
+    fn execute_expr<'a>(&'a self, expr: &'a ExprLoc) -> RunResult<Cow<Object>> {
         // TODO, does creating this struct harm performance, or is it optimised out?
         Evaluator::new(&self.namespace).evaluate(expr)
     }
 
-    fn execute_expr_bool(&self, expr: &RunExpr) -> RunResult<bool> {
+    fn execute_expr_bool(&self, expr: &ExprLoc) -> RunResult<bool> {
         Evaluator::new(&self.namespace).evaluate_bool(expr)
     }
 
-    fn assign(&mut self, target: usize, object: &RunExpr) -> RunResult<()> {
-        self.namespace[target] = match self.execute_expr(object)? {
+    fn assign(&mut self, target: &Identifier, object: &ExprLoc) -> RunResult<()> {
+        self.namespace[target.id] = match self.execute_expr(&object)? {
             Cow::Borrowed(object) => object.clone(),
             Cow::Owned(object) => object,
         };
         Ok(())
     }
 
-    fn op_assign(&mut self, target: usize, op: &Operator, object: &RunExpr) -> RunResult<()> {
-        let right_object = self.execute_expr(object)?.into_owned();
-        if let Some(target_object) = self.namespace.get_mut(target) {
+    fn op_assign(&mut self, target: &Identifier, op: &Operator, object: &ExprLoc) -> RunResult<()> {
+        let right_object = self.execute_expr(&object)?.into_owned();
+        if let Some(target_object) = self.namespace.get_mut(target.id) {
             let ok = match op {
                 Operator::Add => target_object.add_mut(right_object),
                 _ => return Err(format!("Assign operator {op:?} not yet implemented").into()),
@@ -78,19 +75,13 @@ impl Frame {
                 false => Err(format!("Cannot apply assign operator {op:?} {object:?}").into()),
             }
         } else {
-            Err(format!("name '{target}' is not defined").into())
+            Err(format!("name '{}' is not defined", target.name).into())
         }
     }
 
-    fn for_loop(
-        &mut self,
-        target: &RunExpr,
-        iter: &RunExpr,
-        body: &[RunNode],
-        _or_else: &[RunNode],
-    ) -> RunResult<()> {
-        let target_id = match target {
-            Expr::Name(id) => *id,
+    fn for_loop(&mut self, target: &ExprLoc, iter: &ExprLoc, body: &[Node], _or_else: &[Node]) -> RunResult<()> {
+        let target_id = match target.expr {
+            Expr::Name(ref ident) => ident.id,
             _ => return Err("For target must be a name".into()),
         };
         let range_size = match self.execute_expr(iter)?.as_ref() {
@@ -105,7 +96,7 @@ impl Frame {
         Ok(())
     }
 
-    fn if_(&mut self, test: &RunExpr, body: &[RunNode], or_else: &[RunNode]) -> RunResult<()> {
+    fn if_(&mut self, test: &ExprLoc, body: &[Node], or_else: &[Node]) -> RunResult<()> {
         if self.execute_expr_bool(test)? {
             self.execute(body)?;
         } else {

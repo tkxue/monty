@@ -1,5 +1,8 @@
 use crate::object::Object;
+use crate::parse::ParseResult;
 use crate::prepare::PrepareResult;
+
+use rustpython_parser::ast::{Expr as AstExpr, ExprKind, TextRange};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Operator {
@@ -23,7 +26,7 @@ pub(crate) enum Operator {
 
 /// Defined separately since these operators always return a bool
 #[derive(Clone, Debug, PartialEq)]
-pub enum CmpOperator {
+pub(crate) enum CmpOperator {
     Eq,
     NotEq,
     Lt,
@@ -37,29 +40,100 @@ pub enum CmpOperator {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Expr<T, Funcs> {
-    Constant(Object),
-    Name(T),
-    Call {
-        func: Funcs,
-        args: Vec<Expr<T, Funcs>>,
-        kwargs: Vec<(T, Expr<T, Funcs>)>,
-    },
-    Op {
-        left: Box<Expr<T, Funcs>>,
-        op: Operator,
-        right: Box<Expr<T, Funcs>>,
-    },
-    CmpOp {
-        left: Box<Expr<T, Funcs>>,
-        op: CmpOperator,
-        right: Box<Expr<T, Funcs>>,
-    },
-    #[allow(dead_code)]
-    List(Vec<Expr<T, Funcs>>),
+pub(crate) struct Position {
+    start: u32,
+    end: u32,
 }
 
-impl<T, Funcs> Expr<T, Funcs> {
+impl Position {
+    pub fn from_range(range: &TextRange) -> Self {
+        Self {
+            start: range.start().into(),
+            end: range.end().into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExprLoc {
+    pub position: Position,
+    pub expr: Expr,
+}
+
+impl ExprLoc {
+    pub fn from_expr(range: &TextRange, expr: Expr) -> Self {
+        Self {
+            position: Position::from_range(range),
+            expr,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Identifier {
+    pub name: String,
+    pub id: usize,
+}
+
+impl Identifier {
+    pub fn from_ast(ast: AstExpr) -> ParseResult<Self> {
+        match ast.node {
+            ExprKind::Name { id, .. } => Ok(Self::from_name(id)),
+            _ => Err(format!("Expected name, got {:?}", ast.node).into()),
+        }
+    }
+
+    pub fn from_name(name: String) -> Self {
+        Self { name, id: 0 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Kwarg {
+    pub key: Identifier,
+    pub value: ExprLoc,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Function {
+    Builtin(Builtins),
+    Ident(Identifier),
+}
+
+impl Function {
+    /// whether the function has side effects
+    pub fn side_effects(&self) -> bool {
+        match self {
+            Self::Builtin(b) => b.side_effects(),
+            _ => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum Expr {
+    Constant(Object),
+    Name(Identifier),
+    Call {
+        func: Function,
+        args: Vec<ExprLoc>,
+        kwargs: Vec<Kwarg>,
+    },
+    Op {
+        left: Box<ExprLoc>,
+        op: Operator,
+        right: Box<ExprLoc>,
+    },
+    CmpOp {
+        left: Box<ExprLoc>,
+        op: CmpOperator,
+        right: Box<ExprLoc>,
+    },
+    #[allow(dead_code)]
+    List(Vec<ExprLoc>),
+}
+
+impl Expr {
     pub fn is_const(&self) -> bool {
         matches!(self, Self::Constant(_))
     }
@@ -67,34 +141,34 @@ impl<T, Funcs> Expr<T, Funcs> {
     pub fn into_object(self) -> Object {
         match self {
             Self::Constant(object) => object,
-            _ => panic!("into_const can only be called on Constant expression.")
+            _ => panic!("into_const can only be called on Constant expression."),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Node<Vars, Funcs> {
+pub(crate) enum Node {
     Pass,
-    Expr(Expr<Vars, Funcs>),
+    Expr(ExprLoc),
     Assign {
-        target: Vars,
-        object: Box<Expr<Vars, Funcs>>,
+        target: Identifier,
+        object: Box<ExprLoc>, // TODO remove box
     },
     OpAssign {
-        target: Vars,
+        target: Identifier,
         op: Operator,
-        object: Box<Expr<Vars, Funcs>>,
+        object: Box<ExprLoc>, // TODO remove box
     },
     For {
-        target: Expr<Vars, Funcs>,
-        iter: Expr<Vars, Funcs>,
-        body: Vec<Node<Vars, Funcs>>,
-        or_else: Vec<Node<Vars, Funcs>>,
+        target: ExprLoc,
+        iter: ExprLoc,
+        body: Vec<Node>,
+        or_else: Vec<Node>,
     },
     If {
-        test: Expr<Vars, Funcs>,
-        body: Vec<Node<Vars, Funcs>>,
-        or_else: Vec<Node<Vars, Funcs>>,
+        test: ExprLoc,
+        body: Vec<Node>,
+        or_else: Vec<Node>,
     },
 }
 

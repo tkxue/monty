@@ -1,32 +1,32 @@
 use std::borrow::Cow;
+
 use crate::object::Object;
-use crate::prepare::RunExpr;
 use crate::run::RunResult;
-use crate::types::{Builtins, CmpOperator, Expr, Operator};
+use crate::types::{Builtins, CmpOperator, Expr, ExprLoc, Function, Kwarg, Operator};
 
 pub(crate) struct Evaluator<'a> {
-    namespace: &'a [Object]
+    namespace: &'a [Object],
 }
 
 impl<'a> Evaluator<'a> {
     pub fn new(namespace: &'a [Object]) -> Self {
-        Self {namespace}
+        Self { namespace }
     }
 
-    pub fn evaluate(&self, expr: &'a RunExpr) -> RunResult<Cow<'a, Object>> {
-        match expr {
+    pub fn evaluate(&self, expr_loc: &'a ExprLoc) -> RunResult<Cow<'a, Object>> {
+        match &expr_loc.expr {
             Expr::Constant(object) => Ok(Cow::Borrowed(object)),
-            Expr::Name(id) => {
-                if let Some(object) = self.namespace.get(*id) {
+            Expr::Name(ident) => {
+                if let Some(object) = self.namespace.get(ident.id) {
                     match object {
-                        Object::Undefined => Err(format!("name '{id}' is not defined").into()),
+                        Object::Undefined => Err(format!("name '{}' is not defined", ident.name).into()),
                         _ => Ok(Cow::Borrowed(object)),
                     }
                 } else {
-                    Err(format!("name '{id}' is not defined").into())
+                    Err(format!("name '{}' is not defined", ident.name).into())
                 }
             }
-            Expr::Call { func, args, kwargs } => self.call_builtin(func, args, kwargs),
+            Expr::Call { func, args, kwargs } => self.call_function(func, args, kwargs),
             Expr::Op { left, op, right } => self.op(left, op, right),
             Expr::CmpOp { left, op, right } => Ok(Cow::Owned(self.cmp_op(left, op, right)?.into())),
             Expr::List(elements) => {
@@ -39,14 +39,14 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    pub fn evaluate_bool(&self, expr: &RunExpr) -> RunResult<bool> {
-        match expr {
+    pub fn evaluate_bool(&self, expr_loc: &ExprLoc) -> RunResult<bool> {
+        match &expr_loc.expr {
             Expr::CmpOp { left, op, right } => self.cmp_op(left, op, right),
-            _ => self.evaluate(expr)?.as_ref().bool(),
+            _ => self.evaluate(expr_loc)?.as_ref().bool(),
         }
     }
 
-    fn op(&self, left: &'a RunExpr, op: &'a Operator, right: &'a RunExpr) -> RunResult<Cow<'a, Object>> {
+    fn op(&self, left: &'a ExprLoc, op: &'a Operator, right: &'a ExprLoc) -> RunResult<Cow<'a, Object>> {
         let left_object = self.evaluate(left)?;
         let right_object = self.evaluate(right)?;
         let op_object: Option<Object> = match op {
@@ -61,7 +61,7 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn cmp_op(&self, left: &RunExpr, op: &CmpOperator, right: &RunExpr) -> RunResult<bool> {
+    fn cmp_op(&self, left: &ExprLoc, op: &CmpOperator, right: &ExprLoc) -> RunResult<bool> {
         let left_object = self.evaluate(left)?;
         let right_object = self.evaluate(right)?;
         let op_object: Option<bool> = match op {
@@ -79,7 +79,16 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    pub fn call_builtin(&self, builtin: &'a Builtins, args: &'a [RunExpr], _kwargs: &'a [(usize, RunExpr)]) -> RunResult<Cow<'a, Object>> {
+    pub fn call_function(
+        &self,
+        function: &'a Function,
+        args: &'a [ExprLoc],
+        _kwargs: &'a [Kwarg],
+    ) -> RunResult<Cow<'a, Object>> {
+        let builtin = match function {
+            Function::Builtin(builtin) => builtin,
+            Function::Ident(_) => return Err("User defined functions not yet implemented".into()),
+        };
         match builtin {
             Builtins::Print => {
                 for (i, arg) in args.iter().enumerate() {
@@ -103,7 +112,7 @@ impl<'a> Evaluator<'a> {
                         _ => Err("range() argument must be an integer".into()),
                     }
                 }
-            },
+            }
             Builtins::Len => {
                 if args.len() != 1 {
                     Err(format!("len() takes exactly exactly one argument ({} given)", args.len()).into())
@@ -118,4 +127,3 @@ impl<'a> Evaluator<'a> {
         }
     }
 }
-
