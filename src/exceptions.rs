@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::parse::CodeRange;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Exception {
     ValueError(Cow<'static, str>),
@@ -80,7 +81,7 @@ impl<'c> fmt::Display for ExceptionRaise<'c> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(ref frame) = self.frame {
             writeln!(f, "Traceback (most recent call last):")?;
-            write!(f, "{}", frame)?;
+            write!(f, "{frame}")?;
         }
         write!(f, "{}", self.exc.str_with_type())
     }
@@ -113,7 +114,7 @@ pub struct StackFrame<'c> {
 impl<'c> fmt::Display for StackFrame<'c> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(ref parent) = self.parent {
-            write!(f, "{}", parent)?;
+            write!(f, "{parent}")?;
         }
 
         self.position.traceback(f, self.frame_name)
@@ -123,9 +124,9 @@ impl<'c> fmt::Display for StackFrame<'c> {
 impl<'c> StackFrame<'c> {
     pub(crate) fn new(position: &CodeRange<'c>, frame_name: &'c str, parent: &Option<StackFrame<'c>>) -> Self {
         Self {
-            position: position.clone(),
+            position: *position,
             frame_name: Some(frame_name),
-            parent: parent.clone().map(|s| Box::new(s)),
+            parent: parent.clone().map(Box::new),
         }
     }
 

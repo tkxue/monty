@@ -52,7 +52,7 @@ impl<'c> Executor<'c> {
 /// parse code and show the parsed AST, mostly for testing
 pub fn parse_show(code: &str, filename: &str) -> Result<String, String> {
     match parse(code, filename) {
-        Ok(ast) => Ok(format!("{:#?}", ast)),
+        Ok(ast) => Ok(format!("{ast:#?}")),
         Err(e) => Err(e.to_string()),
     }
 }

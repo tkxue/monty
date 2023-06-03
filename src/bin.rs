@@ -34,7 +34,7 @@ fn main() -> ExitCode {
     eprintln!("Elapsed time: {:?}\n", toc - tic);
     match r {
         Ok(exit) => {
-            println!("Exit:\n{}", exit);
+            println!("Exit:\n{exit}");
             ExitCode::SUCCESS
         }
         Err(err) => {

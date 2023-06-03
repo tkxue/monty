@@ -127,7 +127,7 @@ pub(crate) enum Function {
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Builtin(b) => write!(f, "{}", b),
+            Self::Builtin(b) => write!(f, "{b}"),
             Self::Ident(i) => write!(f, "{}", i.name),
         }
     }
@@ -172,21 +172,21 @@ impl<'c> fmt::Display for Expr<'c> {
             Self::Constant(object) => write!(f, "{}", object.repr()),
             Self::Name(identifier) => write!(f, "{}", identifier.name),
             Self::Call { func, args, kwargs } => {
-                write!(f, "{}(", func)?;
+                write!(f, "{func}(")?;
                 for arg in args.iter() {
-                    write!(f, "{}, ", arg)?;
+                    write!(f, "{arg}, ")?;
                 }
                 for kwarg in kwargs.iter() {
                     write!(f, "{}={}, ", kwarg.key.name, kwarg.value)?;
                 }
                 write!(f, ")")
             }
-            Self::Op { left, op, right } => write!(f, "{} {} {}", left, op, right),
-            Self::CmpOp { left, op, right } => write!(f, "{} {} {}", left, op, right),
+            Self::Op { left, op, right } => write!(f, "{left} {op} {right}"),
+            Self::CmpOp { left, op, right } => write!(f, "{left} {op} {right}"),
             Self::List(list) => {
                 write!(f, "[")?;
                 for item in list.iter() {
-                    write!(f, "{}, ", item)?;
+                    write!(f, "{item}, ")?;
                 }
                 write!(f, "]")
             }
@@ -271,6 +271,7 @@ impl Builtins {
 
     /// whether the function has side effects
     pub fn side_effects(&self) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
         match self {
             Self::Print => true,
             _ => false,
@@ -290,8 +291,8 @@ impl<'c> fmt::Display for Exit<'c> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ReturnNone => write!(f, "None"),
-            Self::Return(v) => write!(f, "{}", v),
-            Self::Raise(exc) => write!(f, "{}", exc),
+            Self::Return(v) => write!(f, "{v}"),
+            Self::Raise(exc) => write!(f, "{exc}"),
         }
     }
 }

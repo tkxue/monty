@@ -168,6 +168,7 @@ impl Object {
         }
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> Option<usize> {
         match self {
             Self::Str(v) => Some(v.len()),
@@ -181,8 +182,8 @@ impl Object {
     pub fn repr(&self) -> String {
         // TODO these need to match python escaping
         match self {
-            Self::Str(v) => format!("\"{}\"", v),
-            Self::Bytes(v) => format!("b\"{:?}\"", v),
+            Self::Str(v) => format!("\"{v}\""),
+            Self::Bytes(v) => format!("b\"{v:?}\""),
             _ => self.to_string(),
         }
     }

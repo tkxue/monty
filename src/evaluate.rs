@@ -100,7 +100,7 @@ impl<'d> Evaluator<'d> {
     ) -> RunResult<'c, T> {
         let left_type = left_object.type_str();
         let right_type = right_object.type_str();
-        let new_position  = left.position.extend(&right.position);
+        let new_position = left.position.extend(&right.position);
         Err(
             exc!(Exception::TypeError; "unsupported operand type(s) for {op}: '{left_type}' and '{right_type}'")
                 .with_position(new_position)

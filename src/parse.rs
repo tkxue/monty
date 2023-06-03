@@ -315,7 +315,7 @@ impl<'c> Parser<'c> {
         let mut line_start = 0;
         for (line_no, line_end) in self.line_ends.iter().enumerate() {
             if index <= *line_end {
-                return (line_no, line_start, Some(*line_end))
+                return (line_no, line_start, Some(*line_end));
             }
             line_start = *line_end + 1;
         }

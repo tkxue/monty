@@ -26,9 +26,8 @@ impl<'c> RunFrame<'c> {
 
     pub fn execute(&mut self, nodes: &[Node<'c>]) -> RunResult<'c, Exit<'c>> {
         for node in nodes {
-            match self.execute_node(node)? {
-                Some(leave) => return Ok(leave),
-                None => (),
+            if let Some(leave) = self.execute_node(node)? {
+                return Ok(leave);
             }
         }
         Ok(Exit::ReturnNone)
@@ -81,12 +80,12 @@ impl<'c> RunFrame<'c> {
     }
 
     fn assign(&mut self, target: &Identifier, object: &ExprLoc<'c>) -> RunResult<'c, ()> {
-        self.namespace[target.id] = self.execute_expr(&object)?.into_owned();
+        self.namespace[target.id] = self.execute_expr(object)?.into_owned();
         Ok(())
     }
 
     fn op_assign(&mut self, target: &Identifier, op: &Operator, object: &ExprLoc<'c>) -> RunResult<'c, ()> {
-        let right_object = self.execute_expr(&object)?.into_owned();
+        let right_object = self.execute_expr(object)?.into_owned();
         if let Some(target_object) = self.namespace.get_mut(target.id) {
             let r = match op {
                 Operator::Add => target_object.add_mut(right_object),

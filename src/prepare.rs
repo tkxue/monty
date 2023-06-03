@@ -154,10 +154,7 @@ impl Prepare {
 
         if can_be_const(&expr, &self.consts) {
             let evaluate = Evaluator::new(&self.namespace);
-            let tmp_expr_loc = ExprLoc {
-                position: position.clone(),
-                expr,
-            };
+            let tmp_expr_loc = ExprLoc { position, expr };
             let object = evaluate.evaluate(&tmp_expr_loc)?;
             Ok(ExprLoc {
                 position,
