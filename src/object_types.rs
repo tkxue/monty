@@ -46,16 +46,6 @@ impl Types {
         }
     }
 
-    /// whether the function has side effects
-    pub fn side_effects(&self) -> bool {
-        #[allow(clippy::match_like_matches_macro)]
-        match self {
-            Self::BuiltinFunction(FunctionTypes::Print) => true,
-            Self::Exceptions(_) => true,
-            _ => false,
-        }
-    }
-
     pub fn call_function<'c, 'd>(&self, args: Vec<Cow<'d, Object>>) -> RunResult<'c, Cow<'d, Object>> {
         match self {
             Self::BuiltinFunction(FunctionTypes::Print) => {

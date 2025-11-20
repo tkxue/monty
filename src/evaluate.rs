@@ -11,7 +11,7 @@ pub(crate) fn evaluate<'c, 'd>(
     expr_loc: &'d ExprLoc<'c>,
 ) -> RunResult<'c, Cow<'d, Object>> {
     match &expr_loc.expr {
-        Expr::Constant(object) => Ok(Cow::Borrowed(object)),
+        Expr::Constant(literal) => Ok(Cow::Owned(literal.to_object())),
         Expr::Name(ident) => {
             if let Some(object) = namespace.get(ident.id) {
                 match object {

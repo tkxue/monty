@@ -2,6 +2,7 @@ use std::fmt;
 
 use crate::exceptions::ExceptionRaise;
 
+use crate::literal::Literal;
 use crate::object::{Attr, Object};
 use crate::object_types::Types;
 use crate::operators::{CmpOperator, Operator};
@@ -42,19 +43,9 @@ impl fmt::Display for Function<'_> {
     }
 }
 
-impl Function<'_> {
-    /// whether the function has side effects
-    pub fn side_effects(&self) -> bool {
-        match self {
-            Self::Builtin(b) => b.side_effects(),
-            Self::Ident(_) => true,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum Expr<'c> {
-    Constant(Object),
+    Constant(Literal),
     Name(Identifier<'c>),
     Call {
         func: Function<'c>,
@@ -110,19 +101,8 @@ impl fmt::Display for Expr<'_> {
 }
 
 impl<'c> Expr<'c> {
-    pub fn is_const(&self) -> bool {
-        matches!(self, Self::Constant(_))
-    }
-
     pub fn is_none(&self) -> bool {
-        matches!(self, Self::Constant(Object::None))
-    }
-
-    pub fn into_object(self) -> Object {
-        match self {
-            Self::Constant(object) => object,
-            _ => panic!("into_const can only be called on Constant expression."),
-        }
+        matches!(self, Self::Constant(Literal::None))
     }
 
     fn print_args(

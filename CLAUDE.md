@@ -32,3 +32,8 @@ cargo run -- <file.py>
 ## NOTES
 
 ALWAYS run `make lint` after making changes and fix all suggestions to maintain code quality.
+
+Unless the code you're adding is completely trivial, add a comprehensive but concise docstring or comments to
+explain what the function does and why. If you see a comment that's out of date - please update the comment.
+
+NOTE: COMMENTS AND DOCSTRINGS ARE EXTREMELY IMPORTANT TO THE LONG TERM HEALTH OF THE PROJECT.

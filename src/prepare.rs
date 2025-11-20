@@ -2,9 +2,9 @@ use std::collections::hash_map::Entry;
 
 use ahash::AHashMap;
 
-use crate::evaluate::evaluate;
 use crate::exceptions::{internal_err, ExcType, Exception, ExceptionRaise};
 use crate::expressions::{Expr, ExprLoc, Function, Identifier, Kwarg, Node};
+use crate::literal::Literal;
 use crate::object::Object;
 use crate::object_types::Types;
 use crate::operators::{CmpOperator, Operator};
@@ -13,18 +13,13 @@ use crate::parse_error::{ParseError, ParseResult};
 pub(crate) fn prepare<'c>(nodes: Vec<Node<'c>>, input_names: &[&str]) -> ParseResult<'c, (Vec<Object>, Vec<Node<'c>>)> {
     let mut p = Prepare::new(nodes.len(), input_names, true);
     let new_nodes = p.prepare_nodes(nodes)?;
-    Ok((p.namespace, new_nodes))
+    let namespace = p.namespace.into_iter().map(Literal::into_object).collect();
+    Ok((namespace, new_nodes))
 }
 
 struct Prepare {
     name_map: AHashMap<String, usize>,
-    namespace: Vec<Object>,
-    /// consts is a vec of bools matching `namespace`, where true means the value has not yet been changed,
-    /// and therefore the object can be substituted into expressions as a constant
-    consts: Vec<bool>,
-    /// whether we've hit a loop yet, once true we can't use `consts` since the value could be changed later in the loop
-    /// body
-    hit_loop: bool,
+    namespace: Vec<Literal>,
     /// Root frame is the outer frame of the script, e.g. the "global" scope
     root_frame: bool,
 }
@@ -35,13 +30,10 @@ impl Prepare {
         for (index, name) in input_names.iter().enumerate() {
             name_map.insert((*name).to_string(), index);
         }
-        let namespace = vec![Object::Undefined; name_map.len()];
-        let consts = vec![false; name_map.len()];
+        let namespace = vec![Literal::Undefined; name_map.len()];
         Self {
             name_map,
             namespace,
-            consts,
-            hit_loop: false,
             root_frame,
         }
     }
@@ -88,19 +80,11 @@ impl Prepare {
                 }
                 Node::Assign { target, object } => {
                     let object = self.prepare_expression(object)?;
-                    let (target, is_new) = self.get_id(target);
-                    let target_id = target.id;
-                    if is_new && object.expr.is_const() {
-                        self.namespace[target_id] = object.expr.into_object();
-                        self.consts[target_id] = true;
-                    } else {
-                        new_nodes.push(Node::Assign { target, object });
-                        self.consts[target_id] = false;
-                    }
+                    let (target, _) = self.get_id(target);
+                    new_nodes.push(Node::Assign { target, object });
                 }
                 Node::OpAssign { target, op, object } => {
                     let target = self.get_id(target).0;
-                    self.consts[target.id] = false;
                     let object = self.prepare_expression(object)?;
                     new_nodes.push(Node::OpAssign { target, op, object });
                 }
@@ -110,7 +94,6 @@ impl Prepare {
                     body,
                     or_else,
                 } => {
-                    self.hit_loop = true;
                     new_nodes.push(Node::For {
                         target: self.get_id(target).0,
                         iter: self.prepare_expression(iter)?,
@@ -122,15 +105,7 @@ impl Prepare {
                     let test = self.prepare_expression(test)?;
                     let body = self.prepare_nodes(body)?;
                     let or_else = self.prepare_nodes(or_else)?;
-                    if test.expr.is_const() {
-                        if test.expr.into_object().bool() {
-                            new_nodes.extend(body);
-                        } else {
-                            new_nodes.extend(or_else);
-                        }
-                    } else {
-                        new_nodes.push(Node::If { test, body, or_else });
-                    }
+                    new_nodes.push(Node::If { test, body, or_else });
                 }
             }
         }
@@ -193,7 +168,7 @@ impl Prepare {
 
         if let Expr::CmpOp { left, op, right } = &expr {
             if op == &CmpOperator::Eq {
-                if let Expr::Constant(Object::Int(value)) = right.expr {
+                if let Expr::Constant(Literal::Int(value)) = right.expr {
                     if let Expr::Op {
                         left: left2,
                         op,
@@ -216,18 +191,7 @@ impl Prepare {
             }
         }
 
-        let consts: Option<&[bool]> = if self.hit_loop { None } else { Some(&self.consts) };
-
-        if can_be_const(&expr, consts) {
-            let tmp_expr_loc = ExprLoc { position, expr };
-            let object = evaluate(&mut self.namespace, &tmp_expr_loc)?;
-            Ok(ExprLoc {
-                position,
-                expr: Expr::Constant(object.into_owned()),
-            })
-        } else {
-            Ok(ExprLoc { position, expr })
-        }
+        Ok(ExprLoc { position, expr })
     }
 
     fn prepare_kwarg<'c>(&mut self, kwarg: Kwarg<'c>) -> ParseResult<'c, Kwarg<'c>> {
@@ -248,8 +212,7 @@ impl Prepare {
             }
             Entry::Vacant(e) => {
                 let id = self.namespace.len();
-                self.namespace.push(Object::Undefined);
-                self.consts.push(false);
+                self.namespace.push(Literal::Undefined);
                 e.insert(id);
                 (id, true)
             }
@@ -278,25 +241,5 @@ impl Prepare {
             .map(|kwarg| self.prepare_kwarg(kwarg))
             .collect::<ParseResult<_>>()?;
         Ok((args, kwargs))
-    }
-}
-
-/// whether an expression can be evaluated to a constant
-fn can_be_const(expr: &Expr, consts: Option<&[bool]>) -> bool {
-    match expr {
-        Expr::Constant(_) => true,
-        Expr::Name(ident) => match consts {
-            Some(c) => *c.get(ident.id).unwrap_or(&false),
-            None => false,
-        },
-        Expr::Call { func, args, kwargs } => {
-            !func.side_effects()
-                && args.iter().all(|arg| can_be_const(&arg.expr, consts))
-                && kwargs.iter().all(|kwarg| can_be_const(&kwarg.value.expr, consts))
-        }
-        Expr::AttrCall { .. } => false,
-        Expr::Op { left, op: _, right } => can_be_const(&left.expr, consts) && can_be_const(&right.expr, consts),
-        Expr::CmpOp { left, op: _, right } => can_be_const(&left.expr, consts) && can_be_const(&right.expr, consts),
-        Expr::List(elements) => elements.iter().all(|el| can_be_const(&el.expr, consts)),
     }
 }

@@ -7,7 +7,8 @@ use rustpython_parser::ast::{
 use rustpython_parser::parse_program;
 
 use crate::expressions::{Expr, ExprLoc, Function, Identifier, Kwarg, Node};
-use crate::object::{Attr, Object};
+use crate::literal::Literal;
+use crate::object::Attr;
 use crate::operators::{CmpOperator, Operator};
 use crate::parse_error::{ParseError, ParseResult};
 
@@ -414,29 +415,23 @@ fn convert_compare_op(op: Cmpop) -> CmpOperator {
     }
 }
 
-fn convert_const(c: Constant) -> ParseResult<'static, Object> {
+fn convert_const(c: Constant) -> ParseResult<'static, Literal> {
     let v = match c {
-        Constant::None => Object::None,
-        Constant::Bool(b) => {
-            if b {
-                Object::True
-            } else {
-                Object::False
-            }
-        }
-        Constant::Str(s) => Object::Str(s),
-        Constant::Bytes(b) => Object::Bytes(b),
+        Constant::None => Literal::None,
+        Constant::Bool(b) => Literal::Bool(b),
+        Constant::Str(s) => Literal::Str(s),
+        Constant::Bytes(b) => Literal::Bytes(b),
         Constant::Int(big_int) => match big_int.to_i64() {
-            Some(i) => Object::Int(i),
+            Some(i) => Literal::Int(i),
             None => return Err(ParseError::Todo("BigInt Support")),
         },
         Constant::Tuple(tuple) => {
             let t = tuple.into_iter().map(convert_const).collect::<ParseResult<_>>()?;
-            Object::Tuple(t)
+            Literal::Tuple(t)
         }
-        Constant::Float(f) => Object::Float(f),
+        Constant::Float(f) => Literal::Float(f),
         Constant::Complex { .. } => return Err(ParseError::Todo("complex constants")),
-        Constant::Ellipsis => Object::Ellipsis,
+        Constant::Ellipsis => Literal::Ellipsis,
     };
     Ok(v)
 }
