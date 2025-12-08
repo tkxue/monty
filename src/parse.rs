@@ -331,7 +331,20 @@ impl<'c> Parser<'c> {
                 _ => Err(ParseError::Todo("UnaryOp other than Not/USub")),
             },
             AstExpr::Lambda(_) => Err(ParseError::Todo("Lambda")),
-            AstExpr::If(_) => Err(ParseError::Todo("IfExp")),
+            AstExpr::If(ast::ExprIf {
+                test,
+                body,
+                orelse,
+                range,
+                ..
+            }) => Ok(ExprLoc::new(
+                self.convert_range(range),
+                Expr::IfElse {
+                    test: Box::new(self.parse_expression(*test)?),
+                    body: Box::new(self.parse_expression(*body)?),
+                    orelse: Box::new(self.parse_expression(*orelse)?),
+                },
+            )),
             AstExpr::Dict(ast::ExprDict { items, range, .. }) => {
                 let mut pairs = Vec::new();
                 for ast::DictItem { key, value } in items {

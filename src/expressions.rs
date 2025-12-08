@@ -119,6 +119,15 @@ pub(crate) enum Expr<'c> {
     ///
     /// The results are concatenated to produce the final string.
     FString(Vec<FStringPart<'c>>),
+    /// Conditional expression (ternary operator): `body if test else orelse`
+    ///
+    /// Only one of body/orelse is evaluated based on the truthiness of test.
+    /// This implements short-circuit evaluation - the branch not taken is never executed.
+    IfElse {
+        test: Box<ExprLoc<'c>>,
+        body: Box<ExprLoc<'c>>,
+        orelse: Box<ExprLoc<'c>>,
+    },
 }
 
 impl fmt::Display for Expr<'_> {
@@ -183,6 +192,7 @@ impl fmt::Display for Expr<'_> {
                 }
                 f.write_char('"')
             }
+            Self::IfElse { test, body, orelse } => write!(f, "{body} if {test} else {orelse}"),
         }
     }
 }

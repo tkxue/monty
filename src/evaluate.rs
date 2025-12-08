@@ -136,6 +136,13 @@ where
                 }
             }
             Expr::FString(parts) => self.evaluate_fstring(parts),
+            Expr::IfElse { test, body, orelse } => {
+                if self.evaluate_bool(test)? {
+                    self.evaluate_use(body)
+                } else {
+                    self.evaluate_use(orelse)
+                }
+            }
         }
     }
 
@@ -220,6 +227,13 @@ where
                 let result = self.evaluate_fstring(parts)?;
                 result.drop_with_heap(self.heap);
                 Ok(())
+            }
+            Expr::IfElse { test, body, orelse } => {
+                if self.evaluate_bool(test)? {
+                    self.evaluate_discard(body)
+                } else {
+                    self.evaluate_discard(orelse)
+                }
             }
         }
     }

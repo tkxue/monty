@@ -491,6 +491,11 @@ impl Prepare {
                     .collect::<Result<Vec<_>, ParseError<'c>>>()?;
                 Expr::FString(prepared_parts)
             }
+            Expr::IfElse { test, body, orelse } => Expr::IfElse {
+                test: Box::new(self.prepare_expression(*test)?),
+                body: Box::new(self.prepare_expression(*body)?),
+                orelse: Box::new(self.prepare_expression(*orelse)?),
+            },
         };
 
         // Optimization: Transform `(x % n) == value` with any constant right-hand side into a
@@ -1125,6 +1130,11 @@ fn collect_referenced_names_from_expr(expr: &crate::expressions::ExprLoc<'_>, re
         Expr::AttrCall { object, args, .. } => {
             referenced.insert(object.name.to_string());
             collect_referenced_names_from_args(args, referenced);
+        }
+        Expr::IfElse { test, body, orelse } => {
+            collect_referenced_names_from_expr(test, referenced);
+            collect_referenced_names_from_expr(body, referenced);
+            collect_referenced_names_from_expr(orelse, referenced);
         }
     }
 }
