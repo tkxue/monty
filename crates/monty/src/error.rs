@@ -7,14 +7,15 @@ use crate::{
     types::str::string_repr,
 };
 
+/// Public representation of a Monty exception.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PythonException {
     /// The exception type raised
-    pub exc_type: ExcType,
+    exc_type: ExcType,
     /// Optional exception message explaining what went wrong
-    pub message: Option<String>,
+    message: Option<String>,
     /// Stack trace of the exception, first is the outermost frame shown first in the traceback
-    pub traceback: Vec<StackFrame>,
+    traceback: Vec<StackFrame>,
 }
 
 /// Number of identical consecutive frames to show before collapsing.
@@ -68,17 +69,50 @@ impl fmt::Display for PythonException {
     }
 }
 
-/// Check if two stack frames are identical for the purpose of collapsing repeated frames.
-///
-/// Two frames are identical if they have the same filename, line number, and function name.
-fn frames_are_identical(a: &StackFrame, b: &StackFrame) -> bool {
-    a.filename == b.filename && a.start.line == b.start.line && a.frame_name == b.frame_name
-}
-
 impl std::error::Error for PythonException {}
 
 impl PythonException {
-    pub fn runtime_error(err: impl fmt::Display) -> Self {
+    /// Create a new PythonException with the given exception type and message.
+    ///
+    /// You can't provide a traceback here, it's send when raising the exception.
+    #[must_use]
+    pub fn new(exc_type: ExcType, message: Option<String>) -> Self {
+        Self {
+            exc_type,
+            message,
+            traceback: vec![],
+        }
+    }
+
+    #[must_use]
+    pub fn exc_type(&self) -> ExcType {
+        self.exc_type
+    }
+
+    #[must_use]
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
+    }
+
+    #[must_use]
+    pub fn into_message(self) -> Option<String> {
+        self.message
+    }
+
+    #[must_use]
+    pub fn traceback(&self) -> &[StackFrame] {
+        &self.traceback
+    }
+
+    pub(crate) fn new_full(exc_type: ExcType, message: Option<String>, traceback: Vec<StackFrame>) -> Self {
+        Self {
+            exc_type,
+            message,
+            traceback,
+        }
+    }
+
+    pub(crate) fn runtime_error(err: impl fmt::Display) -> Self {
         Self {
             exc_type: ExcType::RuntimeError,
             message: Some(err.to_string()),
@@ -112,6 +146,13 @@ impl PythonException {
             format!("{type_str}()")
         }
     }
+}
+
+/// Check if two stack frames are identical for the purpose of collapsing repeated frames.
+///
+/// Two frames are identical if they have the same filename, line number, and function name.
+fn frames_are_identical(a: &StackFrame, b: &StackFrame) -> bool {
+    a.filename == b.filename && a.start.line == b.start.line && a.frame_name == b.frame_name
 }
 
 /// A single frame in a Python traceback.

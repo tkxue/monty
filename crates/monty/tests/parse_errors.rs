@@ -7,13 +7,7 @@ mod not_implemented_error {
     /// Helper to extract the exception type from a parse error.
     fn get_exc_type(result: Result<Executor, PythonException>) -> ExcType {
         let err = result.expect_err("expected parse error");
-        err.exc_type
-    }
-
-    /// Helper to extract the exception message from a parse error.
-    fn get_exc_message(result: Result<Executor, PythonException>) -> String {
-        let err = result.expect_err("expected parse error");
-        err.message.unwrap_or_default()
+        err.exc_type()
     }
 
     #[test]
@@ -25,8 +19,11 @@ mod not_implemented_error {
     #[test]
     fn complex_numbers_have_descriptive_message() {
         let result = Executor::new("1 + 2j".to_owned(), "test.py", vec![]);
-        let msg = get_exc_message(result);
-        assert!(msg.contains("complex"), "message should mention 'complex', got: {msg}");
+        let exc = result.expect_err("expected parse error");
+        assert!(
+            exc.message().is_some_and(|m| m.contains("complex")),
+            "message should mention 'complex', got: {exc}"
+        );
     }
 
     #[test]
@@ -41,8 +38,11 @@ mod not_implemented_error {
         let result = Executor::new("def foo():\n    yield 1".to_owned(), "test.py", vec![]);
         assert_eq!(get_exc_type(result), ExcType::NotImplementedError);
         let result = Executor::new("def foo():\n    yield 1".to_owned(), "test.py", vec![]);
-        let msg = get_exc_message(result);
-        assert!(msg.contains("yield"), "message should mention 'yield', got: {msg}");
+        let exc = result.expect_err("expected parse error");
+        assert!(
+            exc.message().is_some_and(|m| m.contains("yield")),
+            "message should mention 'yield', got: {exc}"
+        );
     }
 
     #[test]
@@ -93,7 +93,7 @@ mod syntax_error {
     /// Helper to extract the exception type from a parse error.
     fn get_exc_type(result: Result<Executor, PythonException>) -> ExcType {
         let err = result.expect_err("expected parse error");
-        err.exc_type
+        err.exc_type()
     }
 
     #[test]

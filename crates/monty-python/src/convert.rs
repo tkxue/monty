@@ -5,11 +5,12 @@
 //! - `monty_to_py`: Convert Monty's `MontyObject` back to Python objects for output
 
 use ::monty::MontyObject;
-use pyo3::exceptions::PyException;
+use monty::PythonException;
+use pyo3::exceptions::PyBaseException;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PyString, PyTuple};
 
-use crate::exceptions::{create_py_exception, exc_to_monty_object};
+use crate::exceptions::{exc_monty_to_py, exc_to_monty_object};
 
 /// Converts a Python object to Monty's `MontyObject` representation.
 ///
@@ -54,7 +55,7 @@ pub fn py_to_monty(obj: &Bound<'_, PyAny>) -> PyResult<MontyObject> {
         Ok(MontyObject::FrozenSet(items?))
     } else if obj.is(obj.py().Ellipsis()) {
         Ok(MontyObject::Ellipsis)
-    } else if let Ok(exc) = obj.cast::<PyException>() {
+    } else if let Ok(exc) = obj.cast::<PyBaseException>() {
         Ok(exc_to_monty_object(exc))
     } else {
         Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(format!(
@@ -105,7 +106,7 @@ pub fn monty_to_py(py: Python<'_>, obj: &MontyObject) -> PyResult<Py<PyAny>> {
         }
         // Return the exception instance as a value (not raised)
         MontyObject::Exception { exc_type, arg } => {
-            let exc = create_py_exception(*exc_type, arg.clone());
+            let exc = exc_monty_to_py(PythonException::new(*exc_type, arg.clone()));
             Ok(exc.into_value(py).into_any())
         }
         MontyObject::Type(t) => {

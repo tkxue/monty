@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+use crate::error::PythonException;
+
 /// Trait for handling output from the `print()` builtin function.
 ///
 /// Implement this trait to capture or redirect print output from sandboxed Python code.
@@ -14,7 +16,7 @@ pub trait PrintWriter {
     /// # Arguments
     /// * `output` - The formatted output string for a single argument (without
     ///   separators or trailing newline).
-    fn stdout_write(&mut self, output: Cow<'_, str>);
+    fn stdout_write(&mut self, output: Cow<'_, str>) -> Result<(), PythonException>;
 
     /// Add a single character to stdout.
     ///
@@ -22,7 +24,7 @@ pub trait PrintWriter {
     ///
     /// # Arguments
     /// * `end` - The character to print after the formatted output.
-    fn stdout_push(&mut self, end: char);
+    fn stdout_push(&mut self, end: char) -> Result<(), PythonException>;
 }
 
 /// Default `PrintWriter` that writes to stdout.
@@ -32,12 +34,14 @@ pub trait PrintWriter {
 pub struct StdPrint;
 
 impl PrintWriter for StdPrint {
-    fn stdout_write(&mut self, output: Cow<'_, str>) {
+    fn stdout_write(&mut self, output: Cow<'_, str>) -> Result<(), PythonException> {
         print!("{output}");
+        Ok(())
     }
 
-    fn stdout_push(&mut self, end: char) {
+    fn stdout_push(&mut self, end: char) -> Result<(), PythonException> {
         print!("{end}");
+        Ok(())
     }
 }
 
@@ -74,12 +78,14 @@ impl CollectStringPrint {
 }
 
 impl PrintWriter for CollectStringPrint {
-    fn stdout_write(&mut self, output: Cow<'_, str>) {
+    fn stdout_write(&mut self, output: Cow<'_, str>) -> Result<(), PythonException> {
         self.0.push_str(&output);
+        Ok(())
     }
 
-    fn stdout_push(&mut self, end: char) {
+    fn stdout_push(&mut self, end: char) -> Result<(), PythonException> {
         self.0.push(end);
+        Ok(())
     }
 }
 
@@ -90,7 +96,11 @@ impl PrintWriter for CollectStringPrint {
 pub struct NoPrint;
 
 impl PrintWriter for NoPrint {
-    fn stdout_write(&mut self, _output: Cow<'_, str>) {}
+    fn stdout_write(&mut self, _output: Cow<'_, str>) -> Result<(), PythonException> {
+        Ok(())
+    }
 
-    fn stdout_push(&mut self, _end: char) {}
+    fn stdout_push(&mut self, _end: char) -> Result<(), PythonException> {
+        Ok(())
+    }
 }

@@ -561,6 +561,14 @@ impl fmt::Display for SimpleException {
         self.py_repr_fmt(f)
     }
 }
+impl From<PythonException> for SimpleException {
+    fn from(exc: PythonException) -> Self {
+        Self {
+            exc_type: exc.exc_type(),
+            arg: exc.into_message(),
+        }
+    }
+}
 
 impl SimpleException {
     /// Creates a new exception with the given type and optional argument message.
@@ -728,6 +736,15 @@ impl From<SimpleException> for ExceptionRaise {
     }
 }
 
+impl From<PythonException> for ExceptionRaise {
+    fn from(exc: PythonException) -> Self {
+        Self {
+            exc: exc.into(),
+            frame: None,
+        }
+    }
+}
+
 impl ExceptionRaise {
     /// Returns the exception formatted as Python would display it to the user.
     ///
@@ -788,11 +805,7 @@ impl ExceptionRaise {
             })
             .unwrap_or_default();
 
-        PythonException {
-            exc_type: self.exc.exc_type(),
-            message: self.exc.arg().cloned(),
-            traceback,
-        }
+        PythonException::new_full(self.exc.exc_type(), self.exc.arg().cloned(), traceback)
     }
 }
 
@@ -868,6 +881,12 @@ impl From<ExceptionRaise> for RunError {
 
 impl From<SimpleException> for RunError {
     fn from(exc: SimpleException) -> Self {
+        Self::Exc(exc.into())
+    }
+}
+
+impl From<PythonException> for RunError {
+    fn from(exc: PythonException) -> Self {
         Self::Exc(exc.into())
     }
 }

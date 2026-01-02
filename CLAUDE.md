@@ -238,6 +238,14 @@ Use `@pytest.mark.parametrize` whenever testing multiple similar cases.
 
 Use `snapshot` from `inline-snapshot` for all test asserts.
 
+Use `pytest.raises` for expected exceptions, like this
+
+```py
+with pytest.raises(ValueError) as exc_info:
+    m.run(print_callback=callback)
+assert exc_info.value.args[0] == snapshot('stopped at 3')
+```
+
 ## Reference Counting
 
 Heap-allocated values (`Value::Ref`) use manual reference counting. Key rules:

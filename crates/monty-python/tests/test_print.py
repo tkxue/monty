@@ -1,5 +1,6 @@
 from typing import Callable, Literal
 
+import pytest
 from inline_snapshot import snapshot
 
 import monty
@@ -104,3 +105,83 @@ def test_print_mixed_types() -> None:
     output, callback = make_print_collector()
     m.run(print_callback=callback)
     assert ''.join(output) == snapshot('1 hello True None\n')
+
+
+def make_error_callback(error: Exception) -> PrintCallback:
+    """Create a print callback that raises an exception."""
+
+    def callback(stream: Literal['stdout'], text: str) -> None:
+        raise error
+
+    return callback
+
+
+def test_print_callback_raises_value_error() -> None:
+    """Test that ValueError raised in callback propagates correctly."""
+    m = monty.Monty('print("hello")')
+    callback = make_error_callback(ValueError('callback error'))
+    with pytest.raises(ValueError) as exc_info:
+        m.run(print_callback=callback)
+    assert exc_info.value.args[0] == snapshot('callback error')
+
+
+def test_print_callback_raises_type_error() -> None:
+    """Test that TypeError raised in callback propagates correctly."""
+    m = monty.Monty('print("hello")')
+    callback = make_error_callback(TypeError('wrong type'))
+    with pytest.raises(TypeError) as exc_info:
+        m.run(print_callback=callback)
+    assert exc_info.value.args[0] == snapshot('wrong type')
+
+
+def test_print_callback_raises_in_function() -> None:
+    """Test exception from callback when print is called inside a function."""
+    code = """
+def greet(name):
+    print(f"Hello, {name}!")
+
+greet("World")
+"""
+    m = monty.Monty(code)
+    callback = make_error_callback(RuntimeError('io error'))
+    with pytest.raises(RuntimeError) as exc_info:
+        m.run(print_callback=callback)
+    assert exc_info.value.args[0] == snapshot('io error')
+
+
+def test_print_callback_raises_in_nested_function() -> None:
+    """Test exception from callback when print is called in nested functions."""
+    code = """
+def outer():
+    def inner():
+        print("from inner")
+    inner()
+
+outer()
+"""
+    m = monty.Monty(code)
+    callback = make_error_callback(ValueError('nested error'))
+    with pytest.raises(ValueError) as exc_info:
+        m.run(print_callback=callback)
+    assert exc_info.value.args[0] == snapshot('nested error')
+
+
+def test_print_callback_raises_in_loop() -> None:
+    """Test exception from callback when print is called in a loop."""
+    code = """
+for i in range(5):
+    print(i)
+"""
+    m = monty.Monty(code)
+    call_count = 0
+
+    def callback(stream: Literal['stdout'], text: str) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 3:
+            raise ValueError('stopped at 3')
+
+    with pytest.raises(ValueError) as exc_info:
+        m.run(print_callback=callback)
+    assert exc_info.value.args[0] == snapshot('stopped at 3')
+    assert call_count == snapshot(3)

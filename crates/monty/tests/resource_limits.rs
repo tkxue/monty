@@ -23,11 +23,9 @@ result
     // Should fail due to allocation limit
     assert!(result.is_err(), "should exceed allocation limit");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::MemoryError);
+    assert_eq!(exc.exc_type(), ExcType::MemoryError);
     assert!(
-        exc.message
-            .as_ref()
-            .is_some_and(|m| m.contains("allocation limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("allocation limit exceeded")),
         "expected allocation limit error, got: {exc}"
     );
 }
@@ -69,9 +67,9 @@ x
     // Should fail due to time limit
     assert!(result.is_err(), "should exceed time limit");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::TimeoutError);
+    assert_eq!(exc.exc_type(), ExcType::TimeoutError);
     assert!(
-        exc.message.as_ref().is_some_and(|m| m.contains("time limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("time limit exceeded")),
         "expected time limit error, got: {exc}"
     );
 }
@@ -110,11 +108,9 @@ result
     // Should fail due to memory limit
     assert!(result.is_err(), "should exceed memory limit");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::MemoryError);
+    assert_eq!(exc.exc_type(), ExcType::MemoryError);
     assert!(
-        exc.message
-            .as_ref()
-            .is_some_and(|m| m.contains("memory limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("memory limit exceeded")),
         "expected memory limit error, got: {exc}"
     );
 }
@@ -196,11 +192,9 @@ fn executor_iter_resource_limit_on_resume() {
     let result = state.run(MontyObject::None, &mut StdPrint);
     assert!(result.is_err(), "should exceed allocation limit on resume");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::MemoryError);
+    assert_eq!(exc.exc_type(), ExcType::MemoryError);
     assert!(
-        exc.message
-            .as_ref()
-            .is_some_and(|m| m.contains("allocation limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("allocation limit exceeded")),
         "expected allocation limit error, got: {exc}"
     );
 }
@@ -221,11 +215,9 @@ fn executor_iter_resource_limit_before_function_call() {
 
     assert!(result.is_err(), "should exceed allocation limit before function call");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::MemoryError);
+    assert_eq!(exc.exc_type(), ExcType::MemoryError);
     assert!(
-        exc.message
-            .as_ref()
-            .is_some_and(|m| m.contains("allocation limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("allocation limit exceeded")),
         "expected allocation limit error, got: {exc}"
     );
 }
@@ -306,11 +298,9 @@ recurse(1000)
 
     assert!(result.is_err(), "should exceed memory limit from recursion");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::MemoryError);
+    assert_eq!(exc.exc_type(), ExcType::MemoryError);
     assert!(
-        exc.message
-            .as_ref()
-            .is_some_and(|m| m.contains("memory limit exceeded")),
+        exc.message().is_some_and(|m| m.contains("memory limit exceeded")),
         "expected memory limit error, got: {exc}"
     );
 }
@@ -337,10 +327,9 @@ recurse(100)
 
     assert!(result.is_err(), "should exceed recursion depth limit");
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::RecursionError);
+    assert_eq!(exc.exc_type(), ExcType::RecursionError);
     assert!(
-        exc.message
-            .as_ref()
+        exc.message()
             .is_some_and(|m| m.contains("maximum recursion depth exceeded")),
         "expected recursion depth error, got: {exc}"
     );

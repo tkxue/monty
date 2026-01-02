@@ -3,15 +3,15 @@ use std::fmt::Write;
 
 // Use `::monty` to refer to the external crate (not the pymodule)
 use ::monty::{
-    LimitedTracker, MontyObject, NoLimitTracker, PrintWriter, ResourceTracker, RunProgress, RunSnapshot, Snapshot,
-    StdPrint,
+    LimitedTracker, MontyObject, NoLimitTracker, PrintWriter, PythonException, ResourceTracker, RunProgress,
+    RunSnapshot, Snapshot, StdPrint,
 };
 use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyTypeError};
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{prelude::*, IntoPyObjectExt};
 
 use crate::convert::{monty_to_py, py_to_monty};
-use crate::exceptions::monty_exc_to_py;
+use crate::exceptions::{exc_monty_to_py, exc_py_to_monty};
 use crate::external::ExternalFunctionRegistry;
 use crate::limits::PyResourceLimits;
 
@@ -57,7 +57,7 @@ impl PyMonty {
 
         // Create the snapshot (parses the code)
         let runner = RunSnapshot::new(code, script_name, input_names.clone(), external_function_names.clone())
-            .map_err(monty_exc_to_py)?;
+            .map_err(exc_monty_to_py)?;
 
         Ok(Self {
             runner,
@@ -100,7 +100,7 @@ impl PyMonty {
                         .run_no_snapshot(input_values, $resource_tracker, &mut $print_output)
                     {
                         Ok(v) => monty_to_py(py, &v),
-                        Err(err) => Err(monty_exc_to_py(err)),
+                        Err(err) => Err(exc_monty_to_py(err)),
                     }
                 } else {
                     // Clone the snapshot since run_snapshot methods consume it - allows reuse of the parsed code
@@ -108,7 +108,7 @@ impl PyMonty {
                         .runner
                         .clone()
                         .run_snapshot(input_values, $resource_tracker, &mut $print_output)
-                        .map_err(monty_exc_to_py)?;
+                        .map_err(exc_monty_to_py)?;
                     execute_progress(py, progress, external_functions, &mut $print_output)
                 }
             }};
@@ -152,7 +152,7 @@ impl PyMonty {
                 self.runner
                     .clone()
                     .run_snapshot(input_values, $resource_tracker, &mut $print_output)
-                    .map_err(monty_exc_to_py)?
+                    .map_err(exc_monty_to_py)?
             };
         }
 
@@ -322,7 +322,7 @@ impl PyMontyProgress {
                 } else {
                     snapshot.run(monty_return_value, &mut StdPrint)
                 };
-                EitherProgress::NoLimit(result.map_err(monty_exc_to_py)?)
+                EitherProgress::NoLimit(result.map_err(exc_monty_to_py)?)
             }
             EitherSnapshot::Limited(snapshot) => {
                 let result = if let Some(print_callback) = &self.print_callback {
@@ -330,7 +330,7 @@ impl PyMontyProgress {
                 } else {
                     snapshot.run(monty_return_value, &mut StdPrint)
                 };
-                EitherProgress::Limited(result.map_err(monty_exc_to_py)?)
+                EitherProgress::Limited(result.map_err(exc_monty_to_py)?)
             }
             EitherSnapshot::Done => return Err(PyRuntimeError::new_err("Progress already resumed")),
         };
@@ -401,7 +401,7 @@ fn execute_progress(
 
                 let return_value = registry.call(&function_name, &args, &kwargs);
 
-                progress = state.run(return_value, print_output).map_err(monty_exc_to_py)?;
+                progress = state.run(return_value, print_output).map_err(exc_monty_to_py)?;
             }
         }
     }
@@ -422,15 +422,19 @@ fn list_str(arg: Option<&Bound<'_, PyList>>, name: &str) -> PyResult<Vec<String>
 #[derive(Debug)]
 pub struct CallbackStringPrint<'py>(&'py Bound<'py, PyAny>);
 
+impl<'py> CallbackStringPrint<'py> {
+    fn write(&mut self, output: impl IntoPyObject<'py>) -> PyResult<()> {
+        self.0.call1(("stdout", output))?;
+        Ok(())
+    }
+}
+
 impl PrintWriter for CallbackStringPrint<'_> {
-    fn stdout_write(&mut self, output: Cow<'_, str>) {
-        // TODO PrintWriter needs to return a RunResult
-        let s = output.into_pyobject(self.0.py()).unwrap();
-        self.0.call1(("stdout", s)).unwrap();
+    fn stdout_write(&mut self, output: Cow<'_, str>) -> Result<(), PythonException> {
+        self.write(output).map_err(|e| exc_py_to_monty(self.0.py(), e))
     }
 
-    fn stdout_push(&mut self, end: char) {
-        let s = end.into_pyobject(self.0.py()).unwrap();
-        self.0.call1(("stdout", s)).unwrap();
+    fn stdout_push(&mut self, end: char) -> Result<(), PythonException> {
+        self.write(end).map_err(|e| exc_py_to_monty(self.0.py(), e))
     }
 }

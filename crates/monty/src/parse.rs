@@ -1065,16 +1065,15 @@ impl ParseError {
 impl ParseError {
     pub fn into_python_exc(self, filename: &str, source: &str) -> PythonException {
         match self {
-            ParseError::Syntax { msg, position } => PythonException {
-                exc_type: ExcType::SyntaxError,
-                message: Some(msg.into_owned()),
-                traceback: vec![StackFrame::from_position(position, filename, source)],
-            },
-            ParseError::NotImplemented(msg) => PythonException {
-                exc_type: ExcType::NotImplementedError,
-                message: Some(format!("The monty syntax parser does not yet support {msg}")),
-                traceback: vec![],
-            },
+            ParseError::Syntax { msg, position } => PythonException::new_full(
+                ExcType::SyntaxError,
+                Some(msg.into_owned()),
+                vec![StackFrame::from_position(position, filename, source)],
+            ),
+            ParseError::NotImplemented(msg) => PythonException::new(
+                ExcType::NotImplementedError,
+                Some(format!("The monty syntax parser does not yet support {msg}")),
+            ),
         }
     }
 }

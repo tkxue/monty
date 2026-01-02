@@ -70,11 +70,11 @@ test-cases: ## Run tests cases only
 
 .PHONY: test-py
 test-py: dev-py ## Run Python tests with pytest
-	uv run pytest
+	uv run --package monty-python --only-dev pytest crates/monty-python/tests
 
 .PHONY: test-docs
 test-docs: dev-py ## Test docs examples only
-	uv run pytest crates/monty-python/tests/test_readme_examples.py
+	uv run --package monty-python --only-dev pytest crates/monty-python/tests/test_readme_examples.py
 	cargo test --doc -p monty
 
 .PHONY: test

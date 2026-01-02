@@ -4,8 +4,7 @@
 //! so that Python code sees native Python exceptions.
 
 use ::monty::{ExcType, PythonException};
-use pyo3::exceptions;
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{self, PyBaseException};
 use pyo3::prelude::*;
 
 /// Converts Monty's `PythonException` to a Python exception.
@@ -13,23 +12,9 @@ use pyo3::prelude::*;
 /// Creates an appropriate Python exception type with the message.
 /// The traceback information is included in the exception message
 /// since PyO3 doesn't provide direct traceback manipulation.
-pub fn monty_exc_to_py(exc: PythonException) -> PyErr {
-    // Include traceback in the message if available
-    let msg = if exc.traceback.is_empty() {
-        exc.message.unwrap_or_default()
-    } else {
-        // Use the Display impl of PythonException which formats the full traceback
-        exc.to_string()
-    };
-
-    create_py_exception(exc.exc_type, Some(msg))
-}
-
-/// Creates a Python exception from Monty's exception type and message.
-///
-/// Maps all `ExcType` variants to their corresponding PyO3 exception types.
-pub fn create_py_exception(exc_type: ExcType, arg: Option<String>) -> PyErr {
-    let msg = arg.unwrap_or_default();
+pub fn exc_monty_to_py(exc: PythonException) -> PyErr {
+    let exc_type = exc.exc_type();
+    let msg = exc.into_message().unwrap_or_default();
 
     match exc_type {
         ExcType::Exception => exceptions::PyException::new_err(msg),
@@ -53,8 +38,17 @@ pub fn create_py_exception(exc_type: ExcType, arg: Option<String>) -> PyErr {
     }
 }
 
+/// Converts a python exception to monty.
+pub fn exc_py_to_monty(py: Python<'_>, py_err: PyErr) -> PythonException {
+    let exc = py_err.value(py);
+    let exc_type = py_err_to_exc_type(exc);
+    let arg = exc.str().ok().map(|s| s.to_string_lossy().into_owned());
+
+    PythonException::new(exc_type, arg)
+}
+
 /// Converts a Python exception to Monty's `MontyObject::Exception`.
-pub fn exc_to_monty_object(exc: &Bound<'_, PyException>) -> ::monty::MontyObject {
+pub fn exc_to_monty_object(exc: &Bound<'_, PyBaseException>) -> ::monty::MontyObject {
     let exc_type = py_err_to_exc_type(exc);
     let arg = exc.str().ok().map(|s| s.to_string_lossy().into_owned());
 
@@ -64,7 +58,7 @@ pub fn exc_to_monty_object(exc: &Bound<'_, PyException>) -> ::monty::MontyObject
 /// Maps a Python exception type to Monty's `ExcType` enum.
 ///
 /// NOTE: order matters here!
-fn py_err_to_exc_type(exc: &Bound<'_, PyException>) -> ExcType {
+fn py_err_to_exc_type(exc: &Bound<'_, PyBaseException>) -> ExcType {
     if exc.cast::<exceptions::PyArithmeticError>().is_ok() {
         ExcType::ZeroDivisionError
     } else if exc.cast::<exceptions::PyAssertionError>().is_ok() {

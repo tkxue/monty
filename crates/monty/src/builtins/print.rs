@@ -41,22 +41,22 @@ pub fn builtin_print(
     // Print positional args with separator
     let mut iter = positional.iter();
     if let Some(value) = iter.next() {
-        print.stdout_write(value.py_str(heap, interns));
+        print.stdout_write(value.py_str(heap, interns))?;
         for value in iter {
             if let Some(sep) = &sep {
-                print.stdout_write(sep.as_str().into());
+                print.stdout_write(sep.as_str().into())?;
             } else {
-                print.stdout_push(' ');
+                print.stdout_push(' ')?;
             }
-            print.stdout_write(value.py_str(heap, interns));
+            print.stdout_write(value.py_str(heap, interns))?;
         }
     }
 
     // Append end string
     if let Some(end) = end {
-        print.stdout_write(end.into());
+        print.stdout_write(end.into())?;
     } else {
-        print.stdout_push('\n');
+        print.stdout_push('\n')?;
     }
 
     // Drop positional args

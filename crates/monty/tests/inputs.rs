@@ -285,8 +285,8 @@ fn input_exception_raise() {
         arg: Some("input error".to_string()),
     }]);
     let exc = result.unwrap_err();
-    assert_eq!(exc.exc_type, ExcType::ValueError);
-    assert_eq!(exc.message, Some("input error".to_string()));
+    assert_eq!(exc.exc_type(), ExcType::ValueError);
+    assert_eq!(exc.message(), Some("input error"));
 }
 
 // === Invalid Input Tests ===
