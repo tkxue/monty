@@ -3,7 +3,7 @@ use std::{
     collections::hash_map::DefaultHasher,
     fmt::Write,
     hash::{Hash, Hasher},
-    mem::{ManuallyDrop, discriminant},
+    mem::{ManuallyDrop, discriminant, size_of},
     ptr::addr_of,
     vec,
 };
@@ -17,7 +17,7 @@ use crate::{
     asyncio::{Coroutine, GatherFuture, GatherItem},
     exception_private::{ExcType, RunResult, SimpleException},
     intern::{FunctionId, Interns, StringId},
-    resource::{ResourceError, ResourceTracker},
+    resource::{ResourceError, ResourceTracker, check_mult_size, check_repeat_size},
     types::{
         AttrCallResult, Bytes, Dataclass, Dict, FrozenSet, List, LongInt, Module, MontyIter, NamedTuple, Path, PyTrait,
         Range, Set, Slice, Str, Tuple, Type, allocate_tuple,
@@ -1356,6 +1356,73 @@ impl<T: ResourceTracker> Heap<T> {
         }
     }
 
+    /// Multiplies a heap-allocated value by an `i64`.
+    ///
+    /// If `id` refers to a `LongInt`, performs integer multiplication with a size
+    /// pre-check. Otherwise, treats `id` as a sequence and `int_val` as the repeat
+    /// count. This avoids multiple `heap.get()` calls by looking up the data once.
+    ///
+    /// Returns `Ok(None)` if the heap entry is neither a LongInt nor a sequence type.
+    pub fn mult_ref_by_i64(&mut self, id: HeapId, int_val: i64) -> RunResult<Option<Value>> {
+        let data = take_data!(self, id, "mult_ref_by_i64");
+
+        if let HeapData::LongInt(li) = &data {
+            check_mult_size(li.bits(), i64_bits(int_val), &self.tracker)?;
+            let result = LongInt::new(li.inner().clone()) * LongInt::from(int_val);
+            restore_data!(self, id, data, "mult_ref_by_i64");
+            Ok(Some(result.into_value(self)?))
+        } else {
+            restore_data!(self, id, data, "mult_ref_by_i64");
+            let count = i64_to_repeat_count(int_val)?;
+            self.mult_sequence(id, count)
+        }
+    }
+
+    /// Multiplies two heap-allocated values.
+    ///
+    /// Uses `with_two` to take both entries out once, then matches on the pair:
+    /// - `LongInt * LongInt`: integer multiplication with size pre-check
+    /// - `LongInt * sequence` or `sequence * LongInt`: sequence repetition
+    /// - Anything else: returns `Ok(None)` for unsupported type combinations
+    pub fn mult_heap_values(&mut self, id1: HeapId, id2: HeapId) -> RunResult<Option<Value>> {
+        // Extract the information we need from a single lookup of both values
+        enum MultKind {
+            LongInts { a_bits: u64, b_bits: u64 },
+            SeqTimesLong { seq_id: HeapId, count: usize },
+            Unsupported,
+        }
+
+        let kind = self.with_two(id1, id2, |_heap, left, right| match (left, right) {
+            (HeapData::LongInt(a), HeapData::LongInt(b)) => Ok(MultKind::LongInts {
+                a_bits: a.bits(),
+                b_bits: b.bits(),
+            }),
+            (_, HeapData::LongInt(li)) => {
+                longint_to_repeat_count(li).map(|c| MultKind::SeqTimesLong { seq_id: id1, count: c })
+            }
+            (HeapData::LongInt(li), _) => {
+                longint_to_repeat_count(li).map(|c| MultKind::SeqTimesLong { seq_id: id2, count: c })
+            }
+            _ => Ok(MultKind::Unsupported),
+        })?;
+
+        match kind {
+            MultKind::LongInts { a_bits, b_bits } => {
+                check_mult_size(a_bits, b_bits, &self.tracker)?;
+                Ok(self.with_two(id1, id2, |heap, left, right| {
+                    if let (HeapData::LongInt(a), HeapData::LongInt(b)) = (left, right) {
+                        let result = LongInt::new(a.inner() * b.inner());
+                        result.into_value(heap).map(Some)
+                    } else {
+                        Ok(None)
+                    }
+                })?)
+            }
+            MultKind::SeqTimesLong { seq_id, count } => self.mult_sequence(seq_id, count),
+            MultKind::Unsupported => Ok(None),
+        }
+    }
+
     /// Multiplies (repeats) a sequence by an integer count.
     ///
     /// This method handles sequence repetition for Python's `*` operator when applied
@@ -1376,11 +1443,13 @@ impl<T: ResourceTracker> Heap<T> {
 
         match &data {
             HeapData::Str(s) => {
+                check_repeat_size(s.len(), count, &self.tracker)?;
                 let repeated = s.as_str().repeat(count);
                 restore_data!(self, id, data, "mult_sequence");
                 Ok(Some(Value::Ref(self.allocate(HeapData::Str(repeated.into()))?)))
             }
             HeapData::Bytes(b) => {
+                check_repeat_size(b.len(), count, &self.tracker)?;
                 let repeated = b.as_slice().repeat(count);
                 restore_data!(self, id, data, "mult_sequence");
                 Ok(Some(Value::Ref(self.allocate(HeapData::Bytes(repeated.into()))?)))
@@ -1390,6 +1459,9 @@ impl<T: ResourceTracker> Heap<T> {
                     restore_data!(self, id, data, "mult_sequence");
                     Ok(Some(Value::Ref(self.allocate(HeapData::List(List::new(Vec::new())))?)))
                 } else {
+                    // Pre-check memory limit for large results
+                    check_repeat_size(list.len().saturating_mul(size_of::<Value>()), count, &self.tracker)?;
+
                     // Copy items and track which refs need incrementing
                     let items: Vec<Value> = list.as_vec().iter().map(Value::copy_for_extend).collect();
                     let ref_ids: Vec<HeapId> = items.iter().filter_map(Value::ref_id).collect();
@@ -1430,6 +1502,13 @@ impl<T: ResourceTracker> Heap<T> {
                     // Use empty tuple singleton
                     Ok(Some(self.get_empty_tuple()))
                 } else {
+                    // Pre-check memory limit for large results
+                    check_repeat_size(
+                        tuple.as_vec().len().saturating_mul(size_of::<Value>()),
+                        count,
+                        &self.tracker,
+                    )?;
+
                     // Copy items and track which refs need incrementing
                     let items: Vec<Value> = tuple.as_vec().iter().map(Value::copy_for_extend).collect();
                     let ref_ids: Vec<HeapId> = items.iter().filter_map(Value::ref_id).collect();
@@ -1543,6 +1622,44 @@ impl<T: ResourceTracker> Heap<T> {
         // Reset cycle flag after GC - cycles have been collected
         self.may_have_cycles = false;
         self.allocations_since_gc = 0;
+    }
+}
+
+/// Computes the number of significant bits in an `i64`.
+///
+/// Returns 0 for zero, otherwise returns the position of the highest set bit
+/// plus one. Uses unsigned absolute value to handle negative numbers correctly.
+fn i64_bits(value: i64) -> u64 {
+    if value == 0 {
+        0
+    } else {
+        u64::from(64 - value.unsigned_abs().leading_zeros())
+    }
+}
+
+/// Converts an `i64` repeat count to `usize` for sequence repetition.
+///
+/// Returns 0 for negative values (Python treats negative repeat counts as 0).
+/// Returns `OverflowError` if the value exceeds `usize::MAX`.
+fn i64_to_repeat_count(n: i64) -> RunResult<usize> {
+    if n <= 0 {
+        Ok(0)
+    } else {
+        usize::try_from(n).map_err(|_| ExcType::overflow_repeat_count().into())
+    }
+}
+
+/// Converts a `LongInt` repeat count to `usize` for sequence repetition.
+///
+/// Returns 0 for negative values (Python treats negative repeat counts as 0).
+/// Returns `OverflowError` if the value exceeds `usize::MAX`.
+fn longint_to_repeat_count(li: &LongInt) -> RunResult<usize> {
+    if li.is_negative() {
+        Ok(0)
+    } else if let Some(count) = li.to_usize() {
+        Ok(count)
+    } else {
+        Err(ExcType::overflow_repeat_count().into())
     }
 }
 
